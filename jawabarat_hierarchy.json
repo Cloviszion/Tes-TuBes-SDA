@@ -1,0 +1,51 @@
+{
+  "name": "Jawa Barat",
+  "type": "provinsi",
+  "children": [
+    {
+      "name": "Bandung",
+      "type": "kota",
+      "children": [
+        {
+          "name": "Coblong",
+          "type": "kecamatan",
+          "children": [
+            {
+              "name": "Dago",
+              "type": "kelurahan",
+              "children": [
+                {
+                  "name": "RW 01",
+                  "type": "rw",
+                  "children": [
+                    {
+                      "name": "RT 01",
+                      "type": "rt",
+                      "children": []
+                    },
+                    {
+                      "name": "RT 02",
+                      "type": "rt",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Sukasari",
+          "type": "kecamatan",
+          "children": [
+            {
+              "name": "Sukarasa",
+              "type": "kelurahan",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
