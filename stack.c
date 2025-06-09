@@ -8,15 +8,19 @@
 extern HistoryNode* historyHead;
 extern QueueNode* queueHead;
 extern TreeNode* root;
+extern StackNode* addStack;
+extern StackNode* redoStack;
 
 StackNode* Stack_createNode(const char* operation, TreeNode* node) {
     StackNode* stackNode = (StackNode*)malloc(sizeof(StackNode));
     if (!stackNode) {
-        printf("Memory allocation failed!\n");
+        printf("Alokasi memori gagal!\n");
         exit(1);
     }
     strcpy(stackNode->operation, operation);
     stackNode->node = node;
+    stackNode->parent = NULL;
+    stackNode->queueNode = NULL;
     stackNode->next = NULL;
     return stackNode;
 }
@@ -27,15 +31,16 @@ void Stack_pushAdd(StackNode** head, const char* operation) {
     *head = stackNode;
 }
 
-void Stack_pushDelete(StackNode** head, TreeNode* node, const char* operation) {
+void Stack_pushDelete(StackNode** head, TreeNode* node, TreeNode* parent, const char* operation) {
     StackNode* stackNode = Stack_createNode(operation, node);
+    stackNode->parent = parent;
     stackNode->next = *head;
     *head = stackNode;
 }
 
 void Stack_undoAdd(StackNode** addStack, QueueNode** queueHead, TreeNode* root, void (*addToHistory)(HistoryNode**, const char*)) {
     if (!*addStack) {
-        printf("No add operations to undo!\n");
+        printf("Tidak ada operasi tambah untuk dibatalkan!\n");
         return;
     }
     
@@ -43,13 +48,14 @@ void Stack_undoAdd(StackNode** addStack, QueueNode** queueHead, TreeNode* root, 
     *addStack = (*addStack)->next;
     
     char operation[200];
-    snprintf(operation, sizeof(operation), "Undo %s", stackNode->operation);
+    snprintf(operation, sizeof(operation), "Batalkan %s", stackNode->operation);
     addToHistory(&historyHead, operation);
     
-    char* name = strstr(stackNode->operation, "Added ") + 6;
+    char* name = strstr(stackNode->operation, "Tambah ") + 7;
     char* end = strchr(name, ' ');
     if (end) *end = '\0';
     
+    // Cek di queue terlebih dahulu
     QueueNode* current = *queueHead;
     QueueNode* prev = NULL;
     while (current) {
@@ -59,64 +65,123 @@ void Stack_undoAdd(StackNode** addStack, QueueNode** queueHead, TreeNode* root, 
             } else {
                 *queueHead = current->next;
             }
-            free(current);
-            free(stackNode);
-            printf("Undo add successful!\n");
+            stackNode->queueNode = current;
+            stackNode->next = redoStack;
+            redoStack = stackNode;
+            printf("Pembatalan tambah dari queue berhasil!\n");
             return;
         }
         prev = current;
         current = current->next;
     }
     
-    TreeNode* node = Tree_findNode(root, name);
-    if (node) {
-        for (int i = 0; i < root->childCount; i++) {
-            for (int j = 0; j < root->children[i]->childCount; j++) {
-                if (root->children[i]->children[j] == node) {
-                    for (int k = j; k < root->children[i]->childCount - 1; k++) {
-                        root->children[i]->children[k] = root->children[i]->children[k + 1];
+    // Jika tidak ada di queue, cek di tree
+    TreeNode* target = Tree_findNode(root, name);
+    if (target) {
+        TreeNode* parent = Tree_findParent(root, target);
+        if (parent) {
+            stackNode->node = target;
+            stackNode->parent = parent;
+            for (int i = 0; i < parent->childCount; i++) {
+                if (parent->children[i] == target) {
+                    for (int j = i; j < parent->childCount - 1; j++) {
+                        parent->children[j] = parent->children[j + 1];
                     }
-                    root->children[i]->childCount--;
-                    root->children[i]->children = (TreeNode**)realloc(root->children[i]->children, root->children[i]->childCount * sizeof(TreeNode*));
-                    free(node);
-                    free(stackNode);
-                    printf("Undo add successful!\n");
+                    parent->childCount--;
+                    parent->children = (TreeNode**)realloc(parent->children, parent->childCount * sizeof(TreeNode*));
+                    if (parent->childCount == 0) {
+                        free(parent->children);
+                        parent->children = NULL;
+                    }
+                    stackNode->next = redoStack;
+                    redoStack = stackNode;
+                    printf("Pembatalan tambah dari pohon berhasil!\n");
                     return;
                 }
             }
         }
     }
-    free(stackNode);
-    printf("Node not found for undo!\n");
+    
+    stackNode->next = redoStack;
+    redoStack = stackNode;
+    printf("Node tidak ditemukan untuk pembatalan!\n");
+}
+
+void Stack_redoAdd(StackNode** redoStack, QueueNode** queueHead, TreeNode* root, void (*addToHistory)(HistoryNode**, const char*)) {
+    if (!*redoStack) {
+        printf("Tidak ada operasi untuk diulang!\n");
+        return;
+    }
+    
+    StackNode* stackNode = *redoStack;
+    *redoStack = (*redoStack)->next;
+    
+    char operation[200];
+    snprintf(operation, sizeof(operation), "Ulang %s", stackNode->operation);
+    addToHistory(&historyHead, operation);
+    
+    // Jika diundo dari queue
+    if (stackNode->queueNode) {
+        QueueNode* node = stackNode->queueNode;
+        node->next = *queueHead;
+        *queueHead = node;
+        stackNode->queueNode = NULL;
+        stackNode->next = addStack;
+        addStack = stackNode;
+        printf("Pengulangan tambah ke queue berhasil!\n");
+        return;
+    }
+    
+    // Jika diundo dari tree
+    if (stackNode->node && stackNode->parent) {
+        Tree_addNode(stackNode->parent, stackNode->node);
+        stackNode->node = NULL;
+        stackNode->parent = NULL;
+        stackNode->next = addStack;
+        addStack = stackNode;
+        printf("Pengulangan tambah ke pohon berhasil!\n");
+        return;
+    }
+    
+    stackNode->next = addStack;
+    addStack = stackNode;
+    printf("Gagal mengulang tambah!\n");
 }
 
 void Stack_undoDelete(StackNode** deleteStack, TreeNode* root, void (*addToHistory)(HistoryNode**, const char*)) {
     if (!*deleteStack) {
-        printf("No delete operations to undo!\n");
+        printf("Tidak ada operasi hapus untuk dibatalkan!\n");
         return;
     }
     
     StackNode* stackNode = *deleteStack;
-    *deleteStack = (*deleteStack)->next;
+    *deleteStack = (*deleteStack)->next; // Perbaikan: Gunakan deleteStack, bukan addStack
     
     char operation[200];
-    snprintf(operation, sizeof(operation), "Undo %s", stackNode->operation);
+    snprintf(operation, sizeof(operation), "Batalkan %s", stackNode->operation);
     addToHistory(&historyHead, operation);
     
     TreeNode* node = stackNode->node;
-    for (int i = 0; i < root->childCount; i++) {
-        Tree_addNode(root->children[i], node);
-        break; // Add to first valid parent
+    TreeNode* parent = stackNode->parent;
+    if (node && parent && Tree_findNode(root, parent->name)) {
+        Tree_addNode(parent, node);
+        stackNode->node = NULL;
+        stackNode->parent = NULL;
+        free(stackNode);
+        printf("Pembatalan hapus berhasil!\n");
+        return;
     }
     
     free(stackNode);
-    printf("Undo delete successful!\n");
+    printf("Gagal membatalkan hapus!\n");
 }
 
 void Stack_free(StackNode* head) {
     while (head) {
         StackNode* temp = head;
         head = head->next;
+        if (temp->queueNode) free(temp->queueNode);
+        if (temp->node) Tree_free(temp->node);
         free(temp);
     }
 }
